@@ -1,0 +1,12 @@
+# Databricks Connection
+databricks-connect>=14.3.0
+pyspark>=3.5.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+loguru>=0.7.0
+requests>=2.31.0
+
+# Optional: For data validation
+pandas>=2.0.0

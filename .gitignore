@@ -1,0 +1,36 @@
+# Environment
+.env
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.DS_Store
+.vscode/
+.idea/
+
+# WeChat
+itchat.pkl
+itchat_bridge.pkl
+QR.png
+
+# Local data
+data/
+*.json
+*.db
+*.sqlite

@@ -1,0 +1,16 @@
+command: ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
+env:
+  - name: STORAGE_BACKEND
+    value: "uc"
+  - name: UC_CATALOG
+    value: "dev"
+  - name: UC_SCHEMA
+    value: "inner_feedback"
+  - name: LOCAL_STORAGE_PATH
+    value: "./data"
+  - name: DATABRICKS_HOST
+    value: "${secrets/feedback-scope/databricks-host}"
+  - name: DATABRICKS_TOKEN
+    value: "${secrets/feedback-scope/databricks-token}"
+  - name: TABLE_NAME
+    value: "player_feedback"
