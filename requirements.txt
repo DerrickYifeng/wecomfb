@@ -3,8 +3,8 @@ flask>=3.0.0
 gunicorn>=21.0.0
 
 # Databricks Connection (optional, for Unity Catalog storage)
+# Note: databricks-connect includes PySpark, don't install both
 databricks-connect>=14.3.0
-pyspark>=3.5.0
 
 # Utilities
 python-dotenv>=1.0.0
