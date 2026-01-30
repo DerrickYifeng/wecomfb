@@ -11,8 +11,11 @@ command:
   - |
     set -e
     
+    echo "=========================================="
+    echo "WeCom Feedback Collection System"
+    echo "=========================================="
+    
     # 设置工作目录
-    # 按优先级尝试不同的路径
     WORK_DIR=""
     
     # 0. 如果设置了 WECOMFB_WORK_DIR 环境变量，直接使用
@@ -28,7 +31,7 @@ command:
       fi
     fi
     
-    # 2. 尝试用户工作区路径（如果设置了 DB_USER 环境变量）
+    # 2. 尝试用户工作区路径
     if [ -z "${WORK_DIR}" ] && [ -n "${DB_USER}" ]; then
       USER_PATH="/Workspace/Users/${DB_USER}/wecomfb"
       if [ -d "${USER_PATH}" ]; then
@@ -36,23 +39,8 @@ command:
       fi
     fi
     
-    # 3. 尝试从当前路径推断用户工作区路径
+    # 3. 尝试常见的用户工作区路径模式
     if [ -z "${WORK_DIR}" ]; then
-      CURRENT_DIR="$(pwd)"
-      # 如果当前路径在 /Workspace/Users/ 下，尝试查找 wecomfb 目录
-      if [[ "${CURRENT_DIR}" == /Workspace/Users/* ]]; then
-        # 提取用户路径部分
-        USER_BASE="${CURRENT_DIR%/wecomfb*}"
-        USER_PROJECT="${USER_BASE}/wecomfb"
-        if [ -d "${USER_PROJECT}" ] && [ -f "${USER_PROJECT}/app.yaml" ]; then
-          WORK_DIR="${USER_PROJECT}"
-        fi
-      fi
-    fi
-    
-    # 4. 尝试常见的用户工作区路径模式
-    if [ -z "${WORK_DIR}" ]; then
-      # 尝试常见的路径：/Workspace/Users/<email>/wecomfb
       for USER_DIR in /Workspace/Users/*/wecomfb; do
         if [ -d "${USER_DIR}" ] && [ -f "${USER_DIR}/app.yaml" ]; then
           WORK_DIR="${USER_DIR}"
@@ -61,89 +49,44 @@ command:
       done
     fi
     
-    # 5. 尝试当前目录（如果包含项目文件）
+    # 4. 尝试当前目录
     if [ -z "${WORK_DIR}" ]; then
       if [ -f "app.yaml" ] || [ -f "requirements.txt" ]; then
         WORK_DIR="$(pwd)"
       fi
     fi
     
-    # 6. 最后尝试 /Workspace 目录
+    # 5. 最后使用当前目录
     if [ -z "${WORK_DIR}" ]; then
-      if [ -d "/Workspace" ]; then
-        WORK_DIR="/Workspace"
-      else
-        WORK_DIR="$(pwd)"
-      fi
+      WORK_DIR="$(pwd)"
     fi
     
     # 切换到工作目录
     if [ -n "${WORK_DIR}" ] && [ "${WORK_DIR}" != "$(pwd)" ]; then
-      cd "${WORK_DIR}" || {
-        echo "警告: 无法切换到 ${WORK_DIR}，使用当前目录: $(pwd)"
-      }
+      cd "${WORK_DIR}" || echo "Warning: Cannot change to ${WORK_DIR}"
     fi
     
-    echo "=========================================="
-    echo "WeCom Feedback Collection System"
-    echo "=========================================="
-    echo "工作目录: $(pwd)"
-    echo "目录内容:"
+    echo "Working directory: $(pwd)"
     ls -la
     echo "=========================================="
     
-    # 设置 PYTHONPATH，确保可以找到 databricks_app 模块
+    # 设置 PYTHONPATH
     export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
     echo "PYTHONPATH: ${PYTHONPATH}"
     
-    # 安装依赖（如果需要）
+    # 安装依赖
     if [ -f "requirements.txt" ]; then
-      echo "检查并安装依赖..."
-      pip install --quiet --no-cache-dir -r requirements.txt || {
-        echo "警告: 部分依赖安装失败，继续启动..."
-      }
+      echo "Installing dependencies..."
+      pip install --quiet --no-cache-dir -r requirements.txt || echo "Warning: Some dependencies failed to install"
     fi
     
-    # 验证关键模块
-    echo "验证模块导入..."
-    python3 -c "
-import sys
-print('Python:', sys.executable)
-print('Python version:', sys.version)
-
-# 验证 Flask
-try:
-    from flask import Flask
-    print('✓ Flask 已安装')
-except ImportError as e:
-    print('✗ Flask 导入失败:', e)
-    sys.exit(1)
-
-# 验证 PySpark
-try:
-    from pyspark.sql import SparkSession
-    print('✓ PySpark 已安装')
-except ImportError as e:
-    print('✗ PySpark 导入失败:', e)
-
-# 验证应用模块
-try:
-    import databricks_app.api_app
-    print('✓ databricks_app.api_app 模块可导入')
-except ImportError as e:
-    print('✗ databricks_app.api_app 导入失败:', e)
-    print('  尝试检查目录结构...')
-    import os
-    if os.path.exists('databricks_app'):
-        print('  databricks_app 目录存在')
-        print('  内容:', os.listdir('databricks_app'))
-    else:
-        print('  databricks_app 目录不存在!')
-    sys.exit(1)
-"
+    # 验证模块
+    echo "Verifying modules..."
+    python3 -c "from flask import Flask; print('Flask OK')"
+    python3 -c "import databricks_app.api_app; print('App module OK')"
     
     echo "=========================================="
-    echo "启动 API 服务..."
+    echo "Starting API service..."
     echo "=========================================="
     
     # 启动 gunicorn
@@ -158,7 +101,6 @@ except ImportError as e:
 
 # 环境变量
 env:
-  # 存储配置（使用 Unity Catalog）
   - name: STORAGE_BACKEND
     value: "uc"
   - name: UC_CATALOG
@@ -169,22 +111,21 @@ env:
     value: "player_feedback"
   - name: LOCAL_STORAGE_PATH
     value: "./data"
-  
-  # Databricks 凭据（从 secrets 获取）
   - name: DATABRICKS_HOST
-    value: "${secrets/feedback-scope/databricks-host}"
+    valueFrom:
+      secretKeyRef:
+        name: feedback-scope
+        key: databricks-host
   - name: DATABRICKS_TOKEN
-    value: "${secrets/feedback-scope/databricks-token}"
-  
-  # Webhook 安全密钥
+    valueFrom:
+      secretKeyRef:
+        name: feedback-scope
+        key: databricks-token
   - name: WEBHOOK_SECRET
-    value: "${secrets/feedback-scope/webhook-secret}"
-  
-  # 工作目录配置（可选）
-  # 如果您的项目在用户工作区，可以设置以下环境变量：
-  # - WECOMFB_WORK_DIR: 直接指定工作目录路径
-  # - DB_USER: 指定用户名，脚本会自动查找 /Workspace/Users/${DB_USER}/wecomfb
-  # 如果不设置，脚本会自动检测常见路径
+    valueFrom:
+      secretKeyRef:
+        name: feedback-scope
+        key: webhook-secret
 
 # 资源限制
 resources:
