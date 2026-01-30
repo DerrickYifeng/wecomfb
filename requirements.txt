@@ -2,9 +2,10 @@
 flask>=3.0.0
 gunicorn>=21.0.0
 
-# Databricks Connection (for local development only)
-# Note: In Databricks Apps environment, PySpark is already available natively
-# databricks-connect is only needed for local development to connect to Databricks
+# Databricks Connection
+# databricks-connect is required for both:
+# - Databricks Apps environment: Uses DatabricksSession with Service Principal OAuth
+# - Local development: Uses DatabricksSession with PAT authentication
 # It includes pyspark, so DO NOT install pyspark separately
 databricks-connect>=14.3.0
 

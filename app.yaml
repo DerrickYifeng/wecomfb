@@ -17,10 +17,6 @@ command:
     export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
     echo "PYTHONPATH: ${PYTHONPATH}"
     
-    # Uninstall conflicting packages first (databricks-connect conflicts with pyspark)
-    echo "Removing conflicting packages..."
-    pip uninstall -y databricks-connect pyspark pyspark-connect 2>/dev/null || true
-    
     # Install dependencies
     if [ -f "requirements.txt" ]; then
       echo "Installing dependencies..."

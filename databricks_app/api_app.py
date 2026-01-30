@@ -97,26 +97,26 @@ IS_DATABRICKS_APP = bool(DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET)
 if STORAGE_BACKEND == "uc":
     spark = None
     
-    # Step 1: In Databricks Apps environment - Use native PySpark (no databricks-connect needed)
-    # Databricks Apps run inside Databricks, so SparkSession is available natively
+    # Step 1: In Databricks Apps environment - Use DatabricksSession with Service Principal OAuth
+    # Databricks Apps require databricks-connect with DatabricksSession.builder
     if IS_DATABRICKS_APP:
         try:
-            from pyspark.sql import SparkSession
+            from databricks.connect import DatabricksSession
             
             print("[Config] Running in Databricks Apps environment")
             print(f"[Config] DATABRICKS_CLIENT_ID: {DATABRICKS_CLIENT_ID[:20]}...")
             print(f"[Config] DATABRICKS_CLIENT_SECRET: {'*' * 10} (set)")
             
-            # In Databricks Apps, SparkSession is available directly without databricks-connect
-            print("[Config] Using native PySpark SparkSession...")
-            spark = SparkSession.builder \
-                .appName("WeCom Feedback API") \
+            # Use DatabricksSession with Service Principal OAuth (M2M authentication)
+            print("[Config] Using DatabricksSession with Service Principal OAuth...")
+            spark = DatabricksSession.builder \
+                .serverless(True) \
                 .getOrCreate()
-            print("✅ Connected via native PySpark SparkSession")
+            print("✅ Connected via DatabricksSession (Service Principal OAuth)")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
             ensure_table_exists()
         except Exception as e:
-            print(f"[Error] Native PySpark connection failed: {e}")
+            print(f"[Error] DatabricksSession connection failed: {e}")
             print("Falling back to local storage")
             STORAGE_BACKEND = "local"
             spark = None
