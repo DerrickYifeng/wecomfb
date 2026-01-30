@@ -88,24 +88,31 @@ def ensure_table_exists():
 
 # Initialize storage backend
 if STORAGE_BACKEND == "uc":
+    spark = None
+    
+    # Step 1: Try to get active SparkSession (Databricks App environment)
     try:
-        # Try to get existing SparkSession first (Databricks App environment)
         from pyspark.sql import SparkSession
         
-        try:
-            # In Databricks App, SparkSession is already available
-            spark = SparkSession.builder.getOrCreate()
-            print("✅ Using existing SparkSession (Databricks App environment)")
+        # In Databricks App, SparkSession should already be active
+        active_session = SparkSession.getActiveSession()
+        if active_session is not None:
+            spark = active_session
+            print("✅ Using active SparkSession (Databricks App environment)")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
             # Ensure table exists on startup
             ensure_table_exists()
-        except Exception:
-            # Fall back to Databricks Connect for local development
+    except Exception as e:
+        print(f"[Info] No active SparkSession found: {e}")
+    
+    # Step 2: If no active session, try Databricks Connect (local development)
+    if spark is None:
+        try:
             from databricks.connect import DatabricksSession
             
             # Log configuration
             print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
-            print(f"[Config] DATABRICKS_TOKEN: {'***' if DATABRICKS_TOKEN else 'not set'}")
+            print(f"[Config] DATABRICKS_REDACTED_SECRET {'set' if DATABRICKS_TOKEN else 'not set'}")
             
             if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
                 raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required")
@@ -124,11 +131,11 @@ if STORAGE_BACKEND == "uc":
             
             # Ensure table exists on startup
             ensure_table_exists()
-    except Exception as e:
-        print(f"⚠️  Failed to connect to Databricks: {e}")
-        print("Falling back to local storage")
-        STORAGE_BACKEND = "local"
-        spark = None
+        except Exception as e:
+            print(f"⚠️  Failed to connect to Databricks: {e}")
+            print("Falling back to local storage")
+            STORAGE_BACKEND = "local"
+            spark = None
 else:
     spark = None
     print(f"✅ Using local storage: {LOCAL_STORAGE_PATH}")
