@@ -110,22 +110,29 @@ if STORAGE_BACKEND == "uc":
         try:
             from databricks.connect import DatabricksSession
             
-            # Log configuration
+            # Log configuration (redacted for security)
             print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
-            print(f"[Config] DATABRICKS_REDACTED_SECRET {'set' if DATABRICKS_TOKEN else 'not set'}")
+            print(f"[Config] DATABRICKS_TOKEN: {'set' if DATABRICKS_TOKEN else 'not set'}")
             
+            # Force PAT authentication - clear OAuth env vars to avoid conflict
+            # Databricks SDK may auto-detect OAuth which causes "more than one authorization method" error
+            oauth_vars = ["DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"]
+            for var in oauth_vars:
+                if os.getenv(var):
+                    print(f"[Config] Clearing {var} to avoid auth conflict")
+                    os.environ.pop(var, None)
+            
+            # Validate PAT credentials
             if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
-                raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required")
+                raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required for PAT authentication")
             
-            # Create Databricks session using serverless compute
-            print("[Config] Using serverless compute (Databricks Connect)")
-            print("[Config] Creating DatabricksSession...")
+            # Use PAT authentication
+            print("[Config] Using PAT authentication")
             spark = DatabricksSession.builder \
                 .host(DATABRICKS_HOST) \
                 .token(DATABRICKS_TOKEN) \
                 .serverless(True) \
                 .getOrCreate()
-            
             print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
             
