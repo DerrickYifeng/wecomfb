@@ -557,9 +557,6 @@ def index():
     }), 200
 
 
-if __name__ == '__main__':
-    # For local development only
-    # In Databricks App, gunicorn is used instead
-    import sys
-    if 'gunicorn' not in sys.modules:
-        app.run(host='0.0.0.0', port=8080, debug=True)
+# Note: For local development, run with:
+#   python -m flask --app databricks_app.api_app run --debug --port 8080
+# In Databricks App, gunicorn is used to start the application.
