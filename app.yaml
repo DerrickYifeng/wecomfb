@@ -2,104 +2,36 @@
 # WeCom Feedback Collection System
 
 name: wecomfb
-description: WeCom群聊反馈收集系统 - 将企业微信群聊反馈存储到Unity Catalog
+description: WeCom Feedback Collection System
 
-# 应用入口命令
 command:
   - "bash"
   - "-c"
   - |
     set -e
-    
-    echo "=========================================="
-    echo "WeCom Feedback Collection System"
-    echo "=========================================="
-    
-    # 设置工作目录
-    WORK_DIR=""
-    
-    # 0. 如果设置了 WECOMFB_WORK_DIR 环境变量，直接使用
-    if [ -n "${WECOMFB_WORK_DIR}" ] && [ -d "${WECOMFB_WORK_DIR}" ]; then
-      WORK_DIR="${WECOMFB_WORK_DIR}"
-    fi
-    
-    # 1. 优先使用 Databricks Repos 路径
-    if [ -z "${WORK_DIR}" ] && [ -n "${DB_REPO_OWNER}" ] && [ -n "${DB_REPO_NAME}" ]; then
-      REPO_PATH="/Workspace/Repos/${DB_REPO_OWNER}/${DB_REPO_NAME}"
-      if [ -d "${REPO_PATH}" ]; then
-        WORK_DIR="${REPO_PATH}"
-      fi
-    fi
-    
-    # 2. 尝试用户工作区路径
-    if [ -z "${WORK_DIR}" ] && [ -n "${DB_USER}" ]; then
-      USER_PATH="/Workspace/Users/${DB_USER}/wecomfb"
-      if [ -d "${USER_PATH}" ]; then
-        WORK_DIR="${USER_PATH}"
-      fi
-    fi
-    
-    # 3. 尝试常见的用户工作区路径模式
-    if [ -z "${WORK_DIR}" ]; then
-      for USER_DIR in /Workspace/Users/*/wecomfb; do
-        if [ -d "${USER_DIR}" ] && [ -f "${USER_DIR}/app.yaml" ]; then
-          WORK_DIR="${USER_DIR}"
-          break
-        fi
-      done
-    fi
-    
-    # 4. 尝试当前目录
-    if [ -z "${WORK_DIR}" ]; then
-      if [ -f "app.yaml" ] || [ -f "requirements.txt" ]; then
-        WORK_DIR="$(pwd)"
-      fi
-    fi
-    
-    # 5. 最后使用当前目录
-    if [ -z "${WORK_DIR}" ]; then
-      WORK_DIR="$(pwd)"
-    fi
-    
-    # 切换到工作目录
-    if [ -n "${WORK_DIR}" ] && [ "${WORK_DIR}" != "$(pwd)" ]; then
-      cd "${WORK_DIR}" || echo "Warning: Cannot change to ${WORK_DIR}"
-    fi
-    
+    echo "Starting WeCom Feedback Collection System..."
     echo "Working directory: $(pwd)"
     ls -la
-    echo "=========================================="
     
-    # 设置 PYTHONPATH
+    # Set PYTHONPATH
     export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
     echo "PYTHONPATH: ${PYTHONPATH}"
     
-    # 安装依赖
+    # Install dependencies
     if [ -f "requirements.txt" ]; then
       echo "Installing dependencies..."
-      pip install --quiet --no-cache-dir -r requirements.txt || echo "Warning: Some dependencies failed to install"
+      pip install --quiet --no-cache-dir -r requirements.txt
     fi
     
-    # 验证模块
-    echo "Verifying modules..."
-    python3 -c "from flask import Flask; print('Flask OK')"
-    python3 -c "import databricks_app.api_app; print('App module OK')"
-    
-    echo "=========================================="
-    echo "Starting API service..."
-    echo "=========================================="
-    
-    # 启动 gunicorn
+    # Start gunicorn
+    echo "Starting API service on port 8080..."
     exec gunicorn databricks_app.api_app:app \
-      --bind=0.0.0.0:8080 \
-      --workers=2 \
-      --timeout=120 \
-      --access-logfile=- \
-      --error-logfile=- \
-      --capture-output \
-      --enable-stdio-inheritance
+      --bind 0.0.0.0:8080 \
+      --workers 2 \
+      --timeout 120 \
+      --access-logfile - \
+      --error-logfile -
 
-# 环境变量
 env:
   - name: STORAGE_BACKEND
     value: "uc"
@@ -112,27 +44,16 @@ env:
   - name: LOCAL_STORAGE_PATH
     value: "./data"
   - name: DATABRICKS_HOST
-    valueFrom:
-      secretKeyRef:
-        name: feedback-scope
-        key: databricks-host
+    value: "{{secrets/feedback-scope/databricks-host}}"
   - name: DATABRICKS_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: feedback-scope
-        key: databricks-token
+    value: "{{secrets/feedback-scope/databricks-token}}"
   - name: WEBHOOK_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: feedback-scope
-        key: webhook-secret
+    value: "{{secrets/feedback-scope/webhook-secret}}"
 
-# 资源限制
 resources:
   cpu: "2"
   memory: "4Gi"
 
-# 健康检查
 health:
   path: "/health"
   port: 8080
