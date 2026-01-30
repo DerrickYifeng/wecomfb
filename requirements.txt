@@ -2,8 +2,10 @@
 flask>=3.0.0
 gunicorn>=21.0.0
 
-# Databricks Connection (optional, for Unity Catalog storage)
-# Note: databricks-connect includes PySpark, don't install both
+# Databricks Connection (for local development only)
+# Note: In Databricks Apps environment, PySpark is already available natively
+# databricks-connect is only needed for local development to connect to Databricks
+# It includes pyspark, so DO NOT install pyspark separately
 databricks-connect>=14.3.0
 
 # Utilities

@@ -97,33 +97,31 @@ IS_DATABRICKS_APP = bool(DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET)
 if STORAGE_BACKEND == "uc":
     spark = None
     
-    # Step 1: In Databricks Apps environment - Use Service Principal OAuth (M2M)
-    # This is the ONLY method that works in Databricks Apps
+    # Step 1: In Databricks Apps environment - Use native PySpark (no databricks-connect needed)
+    # Databricks Apps run inside Databricks, so SparkSession is available natively
     if IS_DATABRICKS_APP:
         try:
-            from databricks.connect import DatabricksSession
+            from pyspark.sql import SparkSession
             
             print("[Config] Running in Databricks Apps environment")
             print(f"[Config] DATABRICKS_CLIENT_ID: {DATABRICKS_CLIENT_ID[:20]}...")
             print(f"[Config] DATABRICKS_CLIENT_SECRET: {'*' * 10} (set)")
-            print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set (will use default)")
             
-            # Use OAuth M2M (Service Principal) authentication
-            # The SDK will automatically use DATABRICKS_CLIENT_ID/SECRET env vars
-            print("[Config] Using Service Principal OAuth (M2M) authentication...")
-            spark = DatabricksSession.builder \
-                .serverless(True) \
+            # In Databricks Apps, SparkSession is available directly without databricks-connect
+            print("[Config] Using native PySpark SparkSession...")
+            spark = SparkSession.builder \
+                .appName("WeCom Feedback API") \
                 .getOrCreate()
-            print("✅ Connected via Databricks Apps Service Principal OAuth")
+            print("✅ Connected via native PySpark SparkSession")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
             ensure_table_exists()
         except Exception as e:
-            print(f"[Error] Service Principal OAuth failed: {e}")
+            print(f"[Error] Native PySpark connection failed: {e}")
             print("Falling back to local storage")
             STORAGE_BACKEND = "local"
             spark = None
     
-    # Step 2: Local development - Try PAT authentication
+    # Step 2: Local development - Try databricks-connect with PAT authentication
     if spark is None and not IS_DATABRICKS_APP:
         try:
             from databricks.connect import DatabricksSession
