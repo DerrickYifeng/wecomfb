@@ -45,10 +45,9 @@ env:
     value: "player_feedback"
   - name: LOCAL_STORAGE_PATH
     value: "./data"
-  - name: DATABRICKS_HOST
-    value: "{{secrets/feedback-scope/databricks-host}}"
-  - name: DATABRICKS_TOKEN
-    value: "{{secrets/feedback-scope/databricks-token}}"
+  # Note: Removed DATABRICKS_HOST and DATABRICKS_TOKEN
+  # Databricks Apps automatically provides OAuth authentication
+  # Setting both PAT and OAuth causes authentication conflict
   - name: WEBHOOK_SECRET
     value: "{{secrets/feedback-scope/webhook-secret}}"
 
