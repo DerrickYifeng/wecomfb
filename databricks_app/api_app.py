@@ -86,6 +86,10 @@ def ensure_table_exists():
             return False
 
 
+# Databricks Apps Service Principal credentials (auto-injected by Databricks Apps)
+DATABRICKS_CLIENT_ID = os.getenv("DATABRICKS_CLIENT_ID")
+DATABRICKS_CLIENT_SECRET = os.getenv("DATABRICKS_CLIENT_SECRET")
+
 # Initialize storage backend
 if STORAGE_BACKEND == "uc":
     spark = None
@@ -103,24 +107,29 @@ if STORAGE_BACKEND == "uc":
     except Exception as e:
         print(f"[Info] No active SparkSession found: {e}")
     
-    # Step 2: Try Databricks Apps built-in authentication (no token needed)
-    # In Databricks Apps, the SDK uses the app's service principal automatically
-    if spark is None:
+    # Step 2: Try Databricks Apps Service Principal OAuth (M2M) authentication
+    # Databricks Apps automatically injects DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET
+    if spark is None and DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET:
         try:
             from databricks.connect import DatabricksSession
+            from databricks.sdk.core import Config
             
-            print("[Config] Trying Databricks Apps built-in authentication...")
+            print("[Config] Detected Databricks Apps Service Principal credentials")
+            print(f"[Config] DATABRICKS_CLIENT_ID: {DATABRICKS_CLIENT_ID[:20]}...")
+            print(f"[Config] DATABRICKS_CLIENT_SECRET: {'*' * 10} (set)")
+            print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set (will use default)")
             
-            # In Databricks Apps, just call getOrCreate() without explicit credentials
-            # The SDK will automatically use the app's service principal
+            # Use OAuth M2M (Service Principal) authentication
+            # The SDK will automatically use these env vars for authentication
+            print("[Config] Using Service Principal OAuth (M2M) authentication...")
             spark = DatabricksSession.builder \
                 .serverless(True) \
                 .getOrCreate()
-            print("✅ Connected via Databricks Apps built-in auth (service principal)")
+            print("✅ Connected via Databricks Apps Service Principal OAuth")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
             ensure_table_exists()
         except Exception as e:
-            print(f"[Info] Databricks Apps auth not available: {e}")
+            print(f"[Error] Service Principal OAuth failed: {e}")
             spark = None
     
     # Step 3: Fall back to PAT authentication (local development)
@@ -132,16 +141,16 @@ if STORAGE_BACKEND == "uc":
             print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
             print(f"[Config] DATABRICKS_TOKEN: {'set' if DATABRICKS_TOKEN else 'not set'}")
             
-            # Force PAT authentication - clear OAuth env vars to avoid conflict
-            oauth_vars = ["DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"]
-            for var in oauth_vars:
-                if os.getenv(var):
-                    print(f"[Config] Clearing {var} to avoid auth conflict")
-                    os.environ.pop(var, None)
-            
             # Validate PAT credentials
             if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
                 raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required for PAT authentication")
+            
+            # Clear OAuth env vars to force PAT authentication
+            oauth_vars = ["DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"]
+            for var in oauth_vars:
+                if os.getenv(var):
+                    print(f"[Config] Clearing {var} to use PAT instead")
+                    os.environ.pop(var, None)
             
             # Use PAT authentication
             print("[Config] Using PAT authentication (local development)")
