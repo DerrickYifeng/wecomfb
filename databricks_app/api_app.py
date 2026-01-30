@@ -90,22 +90,40 @@ def ensure_table_exists():
 if STORAGE_BACKEND == "uc":
     spark = None
     
-    # Step 1: Try to get active SparkSession (Databricks App environment)
+    # Step 1: Try to get active SparkSession (Databricks Notebook/Job environment)
     try:
         from pyspark.sql import SparkSession
         
-        # In Databricks App, SparkSession should already be active
         active_session = SparkSession.getActiveSession()
         if active_session is not None:
             spark = active_session
-            print("✅ Using active SparkSession (Databricks App environment)")
+            print("✅ Using active SparkSession (Databricks Notebook/Job environment)")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
-            # Ensure table exists on startup
             ensure_table_exists()
     except Exception as e:
         print(f"[Info] No active SparkSession found: {e}")
     
-    # Step 2: If no active session, try Databricks Connect (local development)
+    # Step 2: Try Databricks Apps built-in authentication (no token needed)
+    # In Databricks Apps, the SDK uses the app's service principal automatically
+    if spark is None:
+        try:
+            from databricks.connect import DatabricksSession
+            
+            print("[Config] Trying Databricks Apps built-in authentication...")
+            
+            # In Databricks Apps, just call getOrCreate() without explicit credentials
+            # The SDK will automatically use the app's service principal
+            spark = DatabricksSession.builder \
+                .serverless(True) \
+                .getOrCreate()
+            print("✅ Connected via Databricks Apps built-in auth (service principal)")
+            print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
+            ensure_table_exists()
+        except Exception as e:
+            print(f"[Info] Databricks Apps auth not available: {e}")
+            spark = None
+    
+    # Step 3: Fall back to PAT authentication (local development)
     if spark is None:
         try:
             from databricks.connect import DatabricksSession
@@ -115,7 +133,6 @@ if STORAGE_BACKEND == "uc":
             print(f"[Config] DATABRICKS_TOKEN: {'set' if DATABRICKS_TOKEN else 'not set'}")
             
             # Force PAT authentication - clear OAuth env vars to avoid conflict
-            # Databricks SDK may auto-detect OAuth which causes "more than one authorization method" error
             oauth_vars = ["DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"]
             for var in oauth_vars:
                 if os.getenv(var):
@@ -127,7 +144,7 @@ if STORAGE_BACKEND == "uc":
                 raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required for PAT authentication")
             
             # Use PAT authentication
-            print("[Config] Using PAT authentication")
+            print("[Config] Using PAT authentication (local development)")
             spark = DatabricksSession.builder \
                 .host(DATABRICKS_HOST) \
                 .token(DATABRICKS_TOKEN) \
@@ -135,8 +152,6 @@ if STORAGE_BACKEND == "uc":
                 .getOrCreate()
             print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
             print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
-            
-            # Ensure table exists on startup
             ensure_table_exists()
         except Exception as e:
             print(f"⚠️  Failed to connect to Databricks: {e}")
