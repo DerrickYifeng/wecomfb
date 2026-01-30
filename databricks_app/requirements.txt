@@ -1,8 +1,0 @@
-streamlit
-databricks-connect
-pyspark
-pandas
-plotly
-flask
-gunicorn
-requests
