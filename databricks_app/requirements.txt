@@ -1,8 +1,8 @@
-streamlit==1.31.0
-databricks-connect==14.3.0
-pyspark==3.5.0
-pandas==2.1.4
-plotly==5.18.0
-flask==3.0.0
-gunicorn==21.2.0
-requests==2.31.0
+streamlit
+databricks-connect
+pyspark
+pandas
+plotly
+flask
+gunicorn
+requests

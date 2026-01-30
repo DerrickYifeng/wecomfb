@@ -29,6 +29,63 @@ LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH", "./data")
 # Security: Webhook secret for verification
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-secret-key-here")
 
+# Flag to track if table has been initialized
+_table_initialized = False
+
+
+def ensure_table_exists():
+    """Ensure Unity Catalog table exists, create if not"""
+    global _table_initialized
+    
+    if _table_initialized:
+        return True
+    
+    try:
+        # Try to check if table exists by querying it
+        spark.table(FULL_TABLE_NAME).limit(0).collect()
+        print(f"✅ Table exists: {FULL_TABLE_NAME}")
+        _table_initialized = True
+        return True
+    except Exception as e:
+        # Table doesn't exist, create it
+        print(f"📊 Table not found, creating: {FULL_TABLE_NAME}")
+        try:
+            # Create catalog if not exists
+            spark.sql(f"CREATE CATALOG IF NOT EXISTS {UC_CATALOG}")
+            print(f"✅ Catalog ready: {UC_CATALOG}")
+            
+            # Create schema if not exists
+            spark.sql(f"CREATE SCHEMA IF NOT EXISTS {UC_CATALOG}.{UC_SCHEMA}")
+            print(f"✅ Schema ready: {UC_CATALOG}.{UC_SCHEMA}")
+            
+            # Create table
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME} (
+                feedback_id STRING NOT NULL,
+                user_name STRING NOT NULL,
+                user_id STRING,
+                group_name STRING,
+                group_id STRING,
+                feedback_content STRING NOT NULL,
+                feedback_type STRING,
+                created_at TIMESTAMP NOT NULL,
+                raw_message STRING,
+                is_processed BOOLEAN DEFAULT FALSE,
+                processed_at TIMESTAMP,
+                notes STRING
+            )
+            USING DELTA
+            COMMENT 'User feedback collected from WeCom groups'
+            """
+            spark.sql(create_table_sql)
+            print(f"✅ Table created: {FULL_TABLE_NAME}")
+            _table_initialized = True
+            return True
+        except Exception as create_error:
+            print(f"❌ Failed to create table: {create_error}")
+            return False
+
+
 # Initialize storage backend
 if STORAGE_BACKEND == "uc":
     try:
@@ -45,6 +102,9 @@ if STORAGE_BACKEND == "uc":
         
         print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
         print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
+        
+        # Ensure table exists on startup
+        ensure_table_exists()
     except Exception as e:
         print(f"⚠️  Failed to connect to Databricks: {e}")
         print("Falling back to local storage")
@@ -59,6 +119,11 @@ else:
 def save_to_unity_catalog(feedback_data: Dict) -> bool:
     """Save feedback to Unity Catalog using Databricks Connect"""
     try:
+        # Ensure table exists before writing
+        if not ensure_table_exists():
+            print("❌ Cannot save: table does not exist and could not be created")
+            return False
+        
         from pyspark.sql import Row
         
         # Create DataFrame from feedback data

@@ -44,15 +44,9 @@ DATABRICKS_TOKEN=your_databricks_token
 WEBHOOK_SECRET=your_webhook_secret
 ```
 
-### 3. 初始化数据库表
+### 3. 配置企业微信 Webhook
 
-```bash
-python init_unity_catalog.py
-```
-
-这会在 Unity Catalog 中创建 `dev.inner_feedback.user_feedback` 表。
-
-### 4. 配置企业微信 Webhook
+> 💡 **注意**：无需手动初始化数据库表，系统会在首次写入时自动创建表结构。
 
 1. 在企业微信管理后台创建群机器人
 2. 获取 Webhook URL
@@ -137,26 +131,50 @@ echo "your_webhook_secret" | \
   databricks secrets put --scope feedback-scope --key webhook-secret
 ```
 
-### 2. 部署 API 服务
+### 2. 从 Git Repo 部署（推荐）
+
+#### 方式 A: Clone 到 Workspace 后部署
+
+1. **在 Databricks Workspace 中 Clone Git Repo**
+   - 进入 Databricks Workspace → Repos
+   - 点击 "Add Repo" → 输入 Git URL
+   - Clone 完成后，repo 路径类似：`/Workspace/Repos/your-email/wecomfb`
+
+2. **部署 API 服务**
+   ```bash
+   # 部署（使用根目录的 app.yaml 配置）
+   databricks apps deploy your-app-name \
+     --source-code-path /Workspace/Repos/your-email/wecomfb
+   ```
+
+3. **查看部署状态**
+   ```bash
+   databricks apps get your-app-name
+   databricks apps logs your-app-name
+   ```
+
+#### 方式 B: 手动上传部署
 
 ```bash
-databricks apps create \
-  --name feedback-api \
-  --source-code-path /Workspace/Users/your-email/feedback-api \
-  --config-file databricks_app/databricks-api-app.yaml
+# 上传 databricks_app 目录
+databricks workspace import-dir ./databricks_app /Workspace/Users/your-email/feedback-api
 
-databricks apps deploy feedback-api
+# 部署
+databricks apps deploy feedback-api \
+  --source-code-path /Workspace/Users/your-email/feedback-api
 ```
 
-### 3. 部署管理界面
+### 3. 部署 Streamlit 管理界面（可选）
+
+如果需要单独部署管理界面：
 
 ```bash
-databricks apps create \
-  --name feedback-dashboard \
-  --source-code-path /Workspace/Users/your-email/feedback-dashboard \
-  --config-file databricks_app/databricks-app.yaml
+# 上传代码
+databricks workspace import-dir ./databricks_app /Workspace/Users/your-email/feedback-dashboard
 
-databricks apps deploy feedback-dashboard
+# 部署
+databricks apps deploy feedback-dashboard \
+  --source-code-path /Workspace/Users/your-email/feedback-dashboard
 ```
 
 ## 📊 查询数据
@@ -253,14 +271,14 @@ GET /api/stats
 
 ```
 wecom_feedback/
-├── init_unity_catalog.py      # 初始化数据库表
-├── requirements.txt           # Python 依赖
+├── app.yaml                  # Databricks App 部署配置（从 Git Repo 部署时使用）
+├── requirements.txt          # Python 依赖
 ├── .env.example              # 环境变量示例
 ├── databricks_app/           # Databricks 应用
 │   ├── api_app.py           # REST API 服务 (含企业微信 Webhook)
 │   ├── app.py               # Streamlit 管理界面
 │   ├── requirements.txt     # 应用依赖
-│   ├── databricks-api-app.yaml      # API 部署配置
+│   ├── databricks-api-app.yaml      # API 部署配置（手动上传时使用）
 │   └── databricks-app.yaml          # 管理界面部署配置
 └── test_api.py              # API 测试脚本
 ```
@@ -285,9 +303,7 @@ wecom_feedback/
 ```
 
 **解决方案**：
-```bash
-python init_unity_catalog.py
-```
+系统会在首次写入时自动创建表。如果仍然出错，请检查 token 权限是否包含创建表的权限。
 
 ### 权限错误
 
