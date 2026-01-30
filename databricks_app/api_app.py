@@ -89,30 +89,41 @@ def ensure_table_exists():
 # Initialize storage backend
 if STORAGE_BACKEND == "uc":
     try:
-        from databricks.connect import DatabricksSession
+        # Try to get existing SparkSession first (Databricks App environment)
         from pyspark.sql import SparkSession
         
-        # Log configuration
-        print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
-        print(f"[Config] DATABRICKS_TOKEN: {'***' if DATABRICKS_TOKEN else 'not set'}")
-        
-        if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
-            raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required")
-        
-        # Create Databricks session using serverless compute
-        print("[Config] Using serverless compute")
-        print("[Config] Creating DatabricksSession...")
-        spark = DatabricksSession.builder \
-            .host(DATABRICKS_HOST) \
-            .token(DATABRICKS_TOKEN) \
-            .serverless(True) \
-            .getOrCreate()
-        
-        print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
-        print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
-        
-        # Ensure table exists on startup
-        ensure_table_exists()
+        try:
+            # In Databricks App, SparkSession is already available
+            spark = SparkSession.builder.getOrCreate()
+            print("✅ Using existing SparkSession (Databricks App environment)")
+            print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
+            # Ensure table exists on startup
+            ensure_table_exists()
+        except Exception:
+            # Fall back to Databricks Connect for local development
+            from databricks.connect import DatabricksSession
+            
+            # Log configuration
+            print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
+            print(f"[Config] DATABRICKS_TOKEN: {'***' if DATABRICKS_TOKEN else 'not set'}")
+            
+            if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
+                raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required")
+            
+            # Create Databricks session using serverless compute
+            print("[Config] Using serverless compute (Databricks Connect)")
+            print("[Config] Creating DatabricksSession...")
+            spark = DatabricksSession.builder \
+                .host(DATABRICKS_HOST) \
+                .token(DATABRICKS_TOKEN) \
+                .serverless(True) \
+                .getOrCreate()
+            
+            print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
+            print(f"✅ Using Unity Catalog: {FULL_TABLE_NAME}")
+            
+            # Ensure table exists on startup
+            ensure_table_exists()
     except Exception as e:
         print(f"⚠️  Failed to connect to Databricks: {e}")
         print("Falling back to local storage")
@@ -547,5 +558,8 @@ def index():
 
 
 if __name__ == '__main__':
-    # For local development
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    # For local development only
+    # In Databricks App, gunicorn is used instead
+    import sys
+    if 'gunicorn' not in sys.modules:
+        app.run(host='0.0.0.0', port=8080, debug=True)
