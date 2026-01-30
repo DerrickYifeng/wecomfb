@@ -23,10 +23,12 @@ command:
       pip install --quiet --no-cache-dir -r requirements.txt
     fi
     
-    # Start gunicorn on port 8000 (avoid port 8080 conflicts with Databricks internal services)
-    echo "Starting API service on port 8000..."
+    # Use PORT environment variable set by Databricks (default to 8080 if not set)
+    APP_PORT="${PORT:-8080}"
+    echo "Starting API service on port ${APP_PORT}..."
+    
     exec gunicorn databricks_app.api_app:app \
-      --bind 0.0.0.0:8000 \
+      --bind 0.0.0.0:${APP_PORT} \
       --workers 2 \
       --timeout 120 \
       --access-logfile - \
@@ -56,5 +58,4 @@ resources:
 
 health:
   path: "/health"
-  port: 8000
   interval: 30
