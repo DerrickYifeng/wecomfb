@@ -8,6 +8,10 @@ import hashlib
 import hmac
 import json
 
+# Load .env file if exists (for local dev and Databricks Apps deployment)
+from dotenv import load_dotenv
+load_dotenv()
+
 app = Flask(__name__)
 
 # Configuration

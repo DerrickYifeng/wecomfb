@@ -45,10 +45,6 @@ env:
     value: "player_feedback"
   - name: LOCAL_STORAGE_PATH
     value: "./data"
-  - name: DATABRICKS_HOST
-    value: "https://311585443305725.5.gcp.databricks.com/"
-  - name: DATABRICKS_TOKEN
-    value: "{{secrets/feedback-scope/databricks-token}}"
   - name: WEBHOOK_SECRET
     value: "{{secrets/feedback-scope/webhook-secret}}"
 
