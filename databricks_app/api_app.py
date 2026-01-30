@@ -70,7 +70,7 @@ def ensure_table_exists():
                 feedback_type STRING,
                 created_at TIMESTAMP NOT NULL,
                 raw_message STRING,
-                is_processed BOOLEAN DEFAULT FALSE,
+                is_processed BOOLEAN,
                 processed_at TIMESTAMP,
                 notes STRING
             )
@@ -92,12 +92,20 @@ if STORAGE_BACKEND == "uc":
         from databricks.connect import DatabricksSession
         from pyspark.sql import SparkSession
         
-        # Create Databricks session
+        # Log configuration
+        print(f"[Config] DATABRICKS_HOST: {DATABRICKS_HOST[:30]}..." if DATABRICKS_HOST else "[Config] DATABRICKS_HOST: not set")
+        print(f"[Config] DATABRICKS_TOKEN: {'***' if DATABRICKS_TOKEN else 'not set'}")
+        
+        if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
+            raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN are required")
+        
+        # Create Databricks session using serverless compute
+        print("[Config] Using serverless compute")
+        print("[Config] Creating DatabricksSession...")
         spark = DatabricksSession.builder \
-            .remote(
-                host=DATABRICKS_HOST,
-                token=DATABRICKS_TOKEN
-            ) \
+            .host(DATABRICKS_HOST) \
+            .token(DATABRICKS_TOKEN) \
+            .serverless(True) \
             .getOrCreate()
         
         print(f"✅ Connected to Databricks: {DATABRICKS_HOST}")
