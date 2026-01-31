@@ -51,10 +51,10 @@ env:
     value: "player_feedback"
   
   # Databricks Connection
+  # Note: DATABRICKS_TOKEN is NOT needed in Databricks Apps environment
+  # Databricks Apps auto-inject DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET for OAuth
   - name: DATABRICKS_HOST
     value: "https://dbc-235982e0-d861.cloud.databricks.com/"
-  - name: DATABRICKS_TOKEN
-    value: "{{secrets/feedback-scope/databricks-token}}"
   
   # WeCom Bot Configuration
   - name: WECOM_CORP_ID

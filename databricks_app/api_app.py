@@ -134,6 +134,12 @@ if STORAGE_BACKEND == "uc":
             print(f"[Config] DATABRICKS_CLIENT_ID: {DATABRICKS_CLIENT_ID[:20]}...")
             print(f"[Config] DATABRICKS_CLIENT_SECRET: {'*' * 10} (set)")
             
+            # IMPORTANT: Clear PAT token in Databricks Apps environment to avoid auth conflict
+            # Databricks Apps auto-inject OAuth credentials, PAT token causes conflict
+            if os.environ.get('DATABRICKS_TOKEN'):
+                print("[Config] Removing DATABRICKS_TOKEN to avoid auth conflict with OAuth...")
+                del os.environ['DATABRICKS_TOKEN']
+            
             # Use DatabricksSession with Service Principal OAuth (M2M authentication)
             print("[Config] Using DatabricksSession with Service Principal OAuth...")
             spark = DatabricksSession.builder \
@@ -298,8 +304,13 @@ class WeChatCrypto:
     def __init__(self, token: str, encoding_aes_key: str, corp_id: str):
         self.token = token
         self.corp_id = corp_id
-        # EncodingAESKey is Base64 encoded, decode to get 32-byte AES key
+        # EncodingAESKey from WeCom is 43 characters, need to add "=" to make it 44 for valid Base64
+        # Validate EncodingAESKey length
+        if len(encoding_aes_key) != 43:
+            raise ValueError(f"EncodingAESKey must be exactly 43 characters, got {len(encoding_aes_key)}")
         self.aes_key = base64.b64decode(encoding_aes_key + "=")
+        if len(self.aes_key) != 32:
+            raise ValueError(f"Decoded AES key must be 32 bytes, got {len(self.aes_key)}")
         self.block_size = 32
     
     def _pkcs7_pad(self, data: bytes) -> bytes:
