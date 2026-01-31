@@ -39,6 +39,32 @@ env:
   # Only keep secrets that should not be committed to repo
   - name: WEBHOOK_SECRET
     value: "{{secrets/feedback-scope/webhook-secret}}"
+  
+  # Storage Configuration
+  - name: STORAGE_BACKEND
+    value: "uc"
+  - name: UC_CATALOG
+    value: "causalab_dev"
+  - name: UC_SCHEMA
+    value: "inner_feedback"
+  - name: TABLE_NAME
+    value: "player_feedback"
+  
+  # Databricks Connection
+  - name: DATABRICKS_HOST
+    value: "https://dbc-235982e0-d861.cloud.databricks.com/"
+  - name: DATABRICKS_TOKEN
+    value: "{{secrets/feedback-scope/databricks-token}}"
+  
+  # WeCom Bot Configuration
+  - name: WECOM_CORP_ID
+    value: "{{secrets/feedback-scope/wecom-corp-id}}"
+  - name: WECOM_TOKEN
+    value: "{{secrets/feedback-scope/wecom-token}}"
+  - name: WECOM_ENCODING_AES_KEY
+    value: "{{secrets/feedback-scope/wecom-aes-key}}"
+  - name: WECOM_BOT_WEBHOOK
+    value: "{{secrets/feedback-scope/wecom-webhook}}"
 
 resources:
   cpu: "2"

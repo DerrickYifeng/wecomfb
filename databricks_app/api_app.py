@@ -13,6 +13,14 @@ import socket
 import xml.etree.ElementTree as ET
 import requests
 
+# Load environment variables from .env file (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Loaded environment variables from .env file")
+except ImportError:
+    print("⚠️  python-dotenv not installed, using system environment variables only")
+
 # WeCom Crypto imports
 try:
     from Crypto.Cipher import AES
