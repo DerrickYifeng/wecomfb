@@ -13,6 +13,9 @@ databricks-connect>=14.3.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 
+# WeCom Encryption Support
+pycryptodome>=3.19.0
+
 # Streamlit App
 streamlit>=1.30.0
 pandas>=2.0.0

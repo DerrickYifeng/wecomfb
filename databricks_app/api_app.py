@@ -7,6 +7,19 @@ import re
 import hashlib
 import hmac
 import json
+import base64
+import struct
+import socket
+import xml.etree.ElementTree as ET
+import requests
+
+# WeCom Crypto imports
+try:
+    from Crypto.Cipher import AES
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("⚠️  pycryptodome not installed. WeCom encrypted mode will not work.")
 
 app = Flask(__name__)
 
@@ -28,6 +41,12 @@ LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH", "./data")
 
 # Security: Webhook secret for verification
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-secret-key-here")
+
+# WeCom Bot Configuration
+WECOM_CORP_ID = os.getenv("WECOM_CORP_ID", "")  # 企业ID
+WECOM_TOKEN = os.getenv("WECOM_TOKEN", "")  # Token for callback verification
+WECOM_ENCODING_AES_KEY = os.getenv("WECOM_ENCODING_AES_KEY", "")  # EncodingAESKey for encryption
+WECOM_BOT_WEBHOOK = os.getenv("WECOM_BOT_WEBHOOK", "")  # Webhook URL for sending messages
 
 # Flag to track if table has been initialized
 _table_initialized = False
@@ -261,6 +280,161 @@ def save_feedback_to_db(feedback_data: Dict) -> bool:
         return save_to_local_storage(feedback_data)
 
 
+# =============================================================================
+# WeCom Encryption/Decryption Utilities
+# =============================================================================
+
+class WeChatCrypto:
+    """WeCom/WeChat message encryption/decryption handler"""
+    
+    def __init__(self, token: str, encoding_aes_key: str, corp_id: str):
+        self.token = token
+        self.corp_id = corp_id
+        # EncodingAESKey is Base64 encoded, decode to get 32-byte AES key
+        self.aes_key = base64.b64decode(encoding_aes_key + "=")
+        self.block_size = 32
+    
+    def _pkcs7_pad(self, data: bytes) -> bytes:
+        """PKCS#7 padding"""
+        padding_len = self.block_size - (len(data) % self.block_size)
+        return data + bytes([padding_len] * padding_len)
+    
+    def _pkcs7_unpad(self, data: bytes) -> bytes:
+        """Remove PKCS#7 padding"""
+        padding_len = data[-1]
+        return data[:-padding_len]
+    
+    def verify_signature(self, msg_signature: str, timestamp: str, nonce: str, echostr: str = None, encrypt: str = None) -> bool:
+        """Verify WeCom message signature"""
+        # Use echostr for URL verification, encrypt for message verification
+        content = echostr if echostr else encrypt
+        if not content:
+            return False
+        
+        sort_list = sorted([self.token, timestamp, nonce, content])
+        sort_str = "".join(sort_list)
+        sha1_hash = hashlib.sha1(sort_str.encode()).hexdigest()
+        return sha1_hash == msg_signature
+    
+    def decrypt(self, encrypted_text: str) -> tuple:
+        """
+        Decrypt WeCom encrypted message
+        Returns: (decrypted_xml, corp_id)
+        """
+        try:
+            cipher = AES.new(self.aes_key, AES.MODE_CBC, self.aes_key[:16])
+            decrypted = cipher.decrypt(base64.b64decode(encrypted_text))
+            decrypted = self._pkcs7_unpad(decrypted)
+            
+            # Parse decrypted content: random(16) + msg_len(4) + msg + corp_id
+            msg_len = struct.unpack('>I', decrypted[16:20])[0]
+            msg = decrypted[20:20 + msg_len].decode('utf-8')
+            from_corp_id = decrypted[20 + msg_len:].decode('utf-8')
+            
+            return msg, from_corp_id
+        except Exception as e:
+            print(f"[WeCom] Decryption error: {e}")
+            raise
+    
+    def encrypt(self, reply_msg: str) -> str:
+        """Encrypt reply message"""
+        # random(16) + msg_len(4) + msg + corp_id
+        random_bytes = os.urandom(16)
+        msg_bytes = reply_msg.encode('utf-8')
+        msg_len = struct.pack('>I', len(msg_bytes))
+        corp_id_bytes = self.corp_id.encode('utf-8')
+        
+        plaintext = random_bytes + msg_len + msg_bytes + corp_id_bytes
+        padded = self._pkcs7_pad(plaintext)
+        
+        cipher = AES.new(self.aes_key, AES.MODE_CBC, self.aes_key[:16])
+        encrypted = cipher.encrypt(padded)
+        return base64.b64encode(encrypted).decode('utf-8')
+    
+    def generate_signature(self, encrypt: str, timestamp: str, nonce: str) -> str:
+        """Generate signature for encrypted response"""
+        sort_list = sorted([self.token, timestamp, nonce, encrypt])
+        sort_str = "".join(sort_list)
+        return hashlib.sha1(sort_str.encode()).hexdigest()
+
+
+def parse_wecom_xml(xml_content: str) -> dict:
+    """Parse WeCom XML message to dict"""
+    try:
+        root = ET.fromstring(xml_content)
+        result = {}
+        for child in root:
+            result[child.tag] = child.text
+        return result
+    except Exception as e:
+        print(f"[WeCom] XML parse error: {e}")
+        return {}
+
+
+def send_wecom_reply(user_id: str, user_name: str, feedback_type: str):
+    """Send thank you message via WeCom webhook (Group Bot)"""
+    if not WECOM_BOT_WEBHOOK:
+        print("[WeCom] No webhook URL configured, skipping reply")
+        return False
+    
+    # Create thank you message with @ mention
+    thank_you_messages = {
+        'bug': f"@{user_name} 感谢您的bug反馈！我们会尽快处理。🔧",
+        'suggestion': f"@{user_name} 感谢您的宝贵建议！我们会认真考虑。💡",
+        'general': f"@{user_name} 感谢您的反馈！我们已收到。✨"
+    }
+    
+    message = thank_you_messages.get(feedback_type, thank_you_messages['general'])
+    
+    try:
+        # WeCom Group Bot webhook message format
+        payload = {
+            "msgtype": "text",
+            "text": {
+                "content": message,
+                "mentioned_list": [user_id] if user_id and user_id != "unknown" else []
+            }
+        }
+        
+        response = requests.post(
+            WECOM_BOT_WEBHOOK,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("errcode") == 0:
+                print(f"[WeCom] Reply sent successfully to {user_name}")
+                return True
+            else:
+                print(f"[WeCom] Reply failed: {result}")
+                return False
+        else:
+            print(f"[WeCom] Reply request failed: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"[WeCom] Error sending reply: {e}")
+        return False
+
+
+# Initialize WeCom crypto handler
+wecom_crypto = None
+if WECOM_TOKEN and WECOM_ENCODING_AES_KEY and WECOM_CORP_ID and CRYPTO_AVAILABLE:
+    try:
+        wecom_crypto = WeChatCrypto(WECOM_TOKEN, WECOM_ENCODING_AES_KEY, WECOM_CORP_ID)
+        print("✅ WeCom encrypted message mode enabled")
+    except Exception as e:
+        print(f"⚠️  Failed to initialize WeCom crypto: {e}")
+else:
+    if not CRYPTO_AVAILABLE:
+        print("⚠️  WeCom encrypted mode disabled: pycryptodome not installed")
+    else:
+        print("⚠️  WeCom encrypted mode disabled: missing WECOM_TOKEN, WECOM_ENCODING_AES_KEY, or WECOM_CORP_ID")
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -488,33 +662,137 @@ def get_stats():
         }), 500
 
 
-@app.route('/api/wecom/callback', methods=['POST'])
+@app.route('/api/wecom/callback', methods=['GET', 'POST'])
 def wecom_callback():
     """
     WeCom (企业微信) Webhook callback endpoint
     
-    This endpoint receives messages from WeCom group bot webhook
+    GET: URL verification (called by WeCom when setting up callback)
+    POST: Receive messages from WeCom
+    
+    Supports both encrypted mode (with Token & EncodingAESKey) and plain text mode
     """
+    
+    # =========================================================================
+    # GET: URL Verification
+    # =========================================================================
+    if request.method == 'GET':
+        # WeCom sends these parameters for URL verification
+        msg_signature = request.args.get('msg_signature', '')
+        timestamp = request.args.get('timestamp', '')
+        nonce = request.args.get('nonce', '')
+        echostr = request.args.get('echostr', '')
+        
+        print(f"[WeCom] URL Verification request received")
+        print(f"[WeCom] msg_signature: {msg_signature}")
+        print(f"[WeCom] timestamp: {timestamp}")
+        print(f"[WeCom] nonce: {nonce}")
+        print(f"[WeCom] echostr: {echostr[:50]}..." if echostr else "[WeCom] echostr: empty")
+        
+        if not wecom_crypto:
+            print("[WeCom] Crypto not configured, returning echostr directly")
+            return echostr, 200
+        
+        # Verify signature
+        if not wecom_crypto.verify_signature(msg_signature, timestamp, nonce, echostr=echostr):
+            print("[WeCom] Signature verification failed")
+            return "Signature verification failed", 403
+        
+        # Decrypt echostr and return
+        try:
+            decrypted_echostr, corp_id = wecom_crypto.decrypt(echostr)
+            print(f"[WeCom] URL Verification successful, corp_id: {corp_id}")
+            return decrypted_echostr, 200
+        except Exception as e:
+            print(f"[WeCom] Failed to decrypt echostr: {e}")
+            return str(e), 500
+    
+    # =========================================================================
+    # POST: Receive Messages
+    # =========================================================================
     try:
-        # Verify signature if provided
-        signature = request.headers.get('X-Webhook-Signature')
-        if signature:
-            payload = request.get_data(as_text=True)
-            if not verify_webhook_signature(payload, signature):
-                return jsonify({'error': 'Invalid signature'}), 401
+        msg_signature = request.args.get('msg_signature', '')
+        timestamp = request.args.get('timestamp', '')
+        nonce = request.args.get('nonce', '')
         
-        data = request.get_json()
+        # Check if this is encrypted XML or plain JSON
+        content_type = request.content_type or ''
+        raw_data = request.get_data(as_text=True)
         
-        # Extract WeCom message fields
-        # WeCom webhook format may vary, adapt as needed
-        user_name = data.get('user_name') or data.get('from', {}).get('name', 'Unknown')
-        user_id = data.get('user_id') or data.get('from', {}).get('userid', 'unknown')
-        content = data.get('content') or data.get('text', {}).get('content', '')
-        group_name = data.get('group_name') or data.get('chatinfo', {}).get('name', 'WeCom')
-        group_id = data.get('group_id') or data.get('chatinfo', {}).get('chatid', 'wecom')
+        user_name = "Unknown"
+        user_id = "unknown"
+        content = ""
+        group_name = "WeCom"
+        group_id = "wecom"
+        
+        # Try to parse as encrypted XML first
+        if '<xml>' in raw_data.lower() or 'xml' in content_type.lower():
+            print("[WeCom] Processing encrypted XML message")
+            
+            # Parse outer XML to get Encrypt field
+            outer_xml = parse_wecom_xml(raw_data)
+            encrypt_content = outer_xml.get('Encrypt', '')
+            
+            if encrypt_content and wecom_crypto:
+                # Verify signature
+                if msg_signature and not wecom_crypto.verify_signature(msg_signature, timestamp, nonce, encrypt=encrypt_content):
+                    print("[WeCom] Message signature verification failed")
+                    return jsonify({'error': 'Invalid signature'}), 401
+                
+                # Decrypt message
+                try:
+                    decrypted_xml, from_corp_id = wecom_crypto.decrypt(encrypt_content)
+                    print(f"[WeCom] Message decrypted, from corp: {from_corp_id}")
+                    
+                    # Parse decrypted XML
+                    msg_data = parse_wecom_xml(decrypted_xml)
+                    
+                    # Extract fields from WeCom message format
+                    user_name = msg_data.get('FromUserName', 'Unknown')
+                    user_id = msg_data.get('FromUserName', 'unknown')
+                    content = msg_data.get('Content', '') or msg_data.get('Recognition', '')
+                    group_name = msg_data.get('ChatName', 'WeCom')
+                    group_id = msg_data.get('ChatId', 'wecom')
+                    
+                    # Handle different message types
+                    msg_type = msg_data.get('MsgType', 'text')
+                    if msg_type == 'event':
+                        event_type = msg_data.get('Event', '')
+                        print(f"[WeCom] Received event: {event_type}")
+                        return jsonify({'success': True, 'message': 'Event received'}), 200
+                        
+                except Exception as e:
+                    print(f"[WeCom] Decryption failed: {e}")
+                    return jsonify({'error': f'Decryption failed: {e}'}), 500
+            else:
+                # Plain XML without encryption
+                msg_data = outer_xml
+                user_name = msg_data.get('FromUserName', 'Unknown')
+                user_id = msg_data.get('FromUserName', 'unknown')
+                content = msg_data.get('Content', '')
+        else:
+            # Plain JSON format (custom webhook)
+            print("[WeCom] Processing JSON message")
+            
+            # Verify custom signature if provided
+            signature = request.headers.get('X-Webhook-Signature')
+            if signature:
+                if not verify_webhook_signature(raw_data, signature):
+                    return jsonify({'error': 'Invalid signature'}), 401
+            
+            data = json.loads(raw_data)
+            
+            # Extract WeCom message fields
+            user_name = data.get('user_name') or data.get('from', {}).get('name', 'Unknown')
+            user_id = data.get('user_id') or data.get('from', {}).get('userid', 'unknown')
+            content = data.get('content') or data.get('text', {}).get('content', '')
+            group_name = data.get('group_name') or data.get('chatinfo', {}).get('name', 'WeCom')
+            group_id = data.get('group_id') or data.get('chatinfo', {}).get('chatid', 'wecom')
         
         if not content:
             return jsonify({'error': 'No content provided'}), 400
+        
+        print(f"[WeCom] Received feedback from {user_name}: {content[:50]}...")
         
         # Generate feedback ID
         feedback_id = str(uuid.uuid4())
@@ -532,13 +810,16 @@ def wecom_callback():
             'feedback_content': content,
             'feedback_type': feedback_type,
             'created_at': datetime.now().isoformat(),
-            'raw_message': str(data)
+            'raw_message': raw_data[:1000]  # Limit raw message size
         }
         
         # Save to database
         success = save_feedback_to_db(feedback_data)
         
         if success:
+            # Send thank you reply to user
+            send_wecom_reply(user_id, user_name, feedback_type)
+            
             return jsonify({
                 'success': True,
                 'feedback_id': feedback_id,
@@ -551,6 +832,7 @@ def wecom_callback():
             }), 500
             
     except Exception as e:
+        print(f"[WeCom] Error processing callback: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
