@@ -304,13 +304,17 @@ class WeChatCrypto:
     def __init__(self, token: str, encoding_aes_key: str, corp_id: str):
         self.token = token
         self.corp_id = corp_id
-        # EncodingAESKey from WeCom is 43 characters, need to add "=" to make it 44 for valid Base64
-        # Validate EncodingAESKey length
-        if len(encoding_aes_key) != 43:
-            raise ValueError(f"EncodingAESKey must be exactly 43 characters, got {len(encoding_aes_key)}")
-        self.aes_key = base64.b64decode(encoding_aes_key + "=")
+        # EncodingAESKey from WeCom needs Base64 decoding to get 32-byte AES key
+        # Standard WeCom key is 43 chars, but we handle different lengths flexibly
+        # Add padding if needed for valid Base64
+        padding_needed = (4 - len(encoding_aes_key) % 4) % 4
+        padded_key = encoding_aes_key + "=" * padding_needed
+        try:
+            self.aes_key = base64.b64decode(padded_key)
+        except Exception as e:
+            raise ValueError(f"Failed to decode EncodingAESKey (length={len(encoding_aes_key)}): {e}")
         if len(self.aes_key) != 32:
-            raise ValueError(f"Decoded AES key must be 32 bytes, got {len(self.aes_key)}")
+            raise ValueError(f"Decoded AES key must be 32 bytes, got {len(self.aes_key)}. Check your EncodingAESKey.")
         self.block_size = 32
     
     def _pkcs7_pad(self, data: bytes) -> bytes:
